@@ -1,0 +1,9 @@
+backend/venv/
+scripts/__pycache__/
+scripts/vaad_scraped.json
+scripts/vaad_data.json
+scripts/vaad.html
+**/__pycache__/
+*.pyc
+.env
+.DS_Store
