@@ -16,7 +16,24 @@ supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVIC
 groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
 try:
-    ee.Initialize(project=os.environ.get("GEE_PROJECT", ""))
+    import json
+    from google.oauth2.credentials import Credentials
+    cred_path = "/etc/secrets/earthengine_credentials"
+    GEE_PROJECT = os.environ.get("GEE_PROJECT", "")
+    if os.path.exists(cred_path):
+        with open(cred_path) as f:
+            cred_data = json.load(f)
+        credentials = Credentials(
+            token=None,
+            refresh_token=cred_data["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id="517222506229-vsmmajv00ul0bs7p89v5m89qs8eb9359.apps.googleusercontent.com",
+            client_secret="",
+            scopes=cred_data["scopes"]
+        )
+        ee.Initialize(credentials=credentials, project=GEE_PROJECT)
+    else:
+        ee.Initialize(project=GEE_PROJECT)
     GEE_AVAILABLE = True
 except Exception as e:
     print(f"GEE not available: {e}")
