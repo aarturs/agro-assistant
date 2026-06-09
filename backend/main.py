@@ -48,14 +48,22 @@ class ChatRequest(BaseModel):
 
 
 import time
+from datetime import datetime, timedelta
+
 _weather_cache = {}
+
+def _cache_expires_at():
+    now = datetime.utcnow()
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+    return midnight.timestamp()
 
 async def fetch_open_meteo(lat, lon):
     cache_key = f"{round(lat,2)}_{round(lon,2)}"
     now = time.time()
     if cache_key in _weather_cache:
-        cached_time, cached_data = _weather_cache[cache_key]
-        if now - cached_time < 3600:
+        cached_expires, cached_data = _weather_cache[cache_key]
+        if now < cached_expires:
+            print(f"[WEATHER] Serving from cache for {cache_key}")
             return cached_data
     params = {
         "latitude": lat, "longitude": lon,
@@ -64,12 +72,42 @@ async def fetch_open_meteo(lat, lon):
         "daily": ["temperature_2m_max", "temperature_2m_min", "precipitation_sum"],
         "timezone": "Europe/Riga", "forecast_days": 3,
     }
-    async with httpx.AsyncClient(timeout=15) as c:
-        r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
-        data = r.json()
-        if not data.get("error"):
-            _weather_cache[cache_key] = (now, data)
-        return data
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
+            data = r.json()
+            if data.get("error"):
+                print(f"[WEATHER] API error: {data.get('reason')} — serving stale cache if available")
+                if cache_key in _weather_cache:
+                    _, stale = _weather_cache[cache_key]
+                    return stale
+                return _fallback_weather()
+            expires = _cache_expires_at()
+            _weather_cache[cache_key] = (expires, data)
+            print(f"[WEATHER] Fetched fresh data, cached until midnight UTC")
+            return data
+    except Exception as e:
+        print(f"[WEATHER] Exception: {e}")
+        if cache_key in _weather_cache:
+            _, stale = _weather_cache[cache_key]
+            return stale
+        return _fallback_weather()
+
+def _fallback_weather():
+    return {
+        "current": {
+            "temperature_2m": "Nav datu",
+            "relative_humidity_2m": "Nav datu",
+            "wind_speed_10m": 0,
+            "weather_code": 0,
+            "precipitation": 0
+        },
+        "hourly": {"precipitation": [0]*24, "precipitation_probability": [0]*24,
+                   "soil_temperature_0cm": [0]*24, "soil_moisture_0_to_1cm": [0]*24},
+        "daily": {"temperature_2m_max": ["Nav datu"], "temperature_2m_min": ["Nav datu"],
+                  "precipitation_sum": [0]},
+        "_cache_status": "Nav laika datu — limits atjaunojas 03:00 Rīgas laikā"
+    }
 
 
 def fetch_ndvi(lat, lon):
