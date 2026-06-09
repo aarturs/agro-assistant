@@ -47,7 +47,16 @@ class ChatRequest(BaseModel):
     conversation_history: list[dict] = []
 
 
+import time
+_weather_cache = {}
+
 async def fetch_open_meteo(lat, lon):
+    cache_key = f"{round(lat,2)}_{round(lon,2)}"
+    now = time.time()
+    if cache_key in _weather_cache:
+        cached_time, cached_data = _weather_cache[cache_key]
+        if now - cached_time < 3600:
+            return cached_data
     params = {
         "latitude": lat, "longitude": lon,
         "current": ["temperature_2m", "relative_humidity_2m", "precipitation", "wind_speed_10m", "weather_code"],
@@ -55,9 +64,12 @@ async def fetch_open_meteo(lat, lon):
         "daily": ["temperature_2m_max", "temperature_2m_min", "precipitation_sum"],
         "timezone": "Europe/Riga", "forecast_days": 3,
     }
-    async with httpx.AsyncClient(timeout=10) as c:
+    async with httpx.AsyncClient(timeout=15) as c:
         r = await c.get("https://api.open-meteo.com/v1/forecast", params=params)
-        return r.json()
+        data = r.json()
+        if not data.get("error"):
+            _weather_cache[cache_key] = (now, data)
+        return data
 
 
 def fetch_ndvi(lat, lon):
